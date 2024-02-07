@@ -256,20 +256,15 @@ import requests
 from urllib.parse import urlparse, unquote
 
 def ensure_dir(directory):
-    """Ensure that a directory exists; if not, create it."""
     if not os.path.exists(directory):
         os.makedirs(directory)
 
 def download_file(url):
-    """Download a file from a URL, preserving its path structure."""
     try:
         response = requests.get(url, stream=True)
-        # Check if the request was successful (200 OK)
         if response.status_code == 200:
             parsed_url = urlparse(url)
-            # Unquote URL to handle %20 spaces etc., and construct the local file path
             path = unquote(parsed_url.path)
-            # Assuming all files are downloaded to a 'downloads' directory
             local_file_path = os.path.join('downloads', path.lstrip('/'))
             
             ensure_dir(os.path.dirname(local_file_path))
@@ -277,17 +272,18 @@ def download_file(url):
             with open(local_file_path, 'wb') as file:
                 for chunk in response.iter_content(chunk_size=8192):
                     file.write(chunk)
-            print(f"Downloaded: {url} -> {local_file_path}")
+            # Comment out or remove the print statement for silent operation
+            # print(f"Downloaded: {url} -> {local_file_path}")
         else:
             print(f"Failed to download {url}: HTTP Status Code {response.status_code}", file=sys.stderr)
     except requests.RequestException as e:
         print(f"Error downloading {url}: {e}", file=sys.stderr)
 
 def main():
-    print("Enter URLs (one per line). Press Ctrl-D (Unix) or Ctrl-Z (Windows) followed by Enter when done:")
     for line in sys.stdin:
         url = line.strip()
-        download_file(url)
+        if url:
+            download_file(url)
 
 if __name__ == "__main__":
     main()
