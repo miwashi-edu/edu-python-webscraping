@@ -200,46 +200,44 @@ from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
 import sys
 
-def get_unique_urls(page_url):
-    """Scrape the page for unique img and a tag URLs."""
+def get_unique_urls(start_url):
+    """Scrape the page for unique URLs from <img> and <a> tags."""
     unique_urls = set()  # Use a set to store unique URLs
     try:
-        response = requests.get(page_url)
-        soup = BeautifulSoup(response.content, 'html.parser')
+        response = requests.get(start_url)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
 
-        # Extract URLs from <a> tags
-        for link in soup.find_all('a', href=True):
-            href = link['href']
-            full_url = urljoin(page_url, href)
-            unique_urls.add(full_url)
+            # Extract URLs from <a> tags and handle relative URLs
+            for link in soup.find_all('a', href=True):
+                href = link['href']
+                full_url = urljoin(start_url, href)  # Append relative URLs to base URL
+                unique_urls.add(full_url)
 
-        # Extract URLs from <img> tags
-        for img in soup.find_all('img', src=True):
-            src = img['src']
-            full_url = urljoin(page_url, src)
-            unique_urls.add(full_url)
+            # Extract URLs from <img> tags and handle relative URLs
+            for img in soup.find_all('img', src=True):
+                src = img['src']
+                full_img_url = urljoin(start_url, src)  # Append relative URLs to base URL
+                unique_urls.add(full_img_url)
 
     except requests.RequestException as e:
-        print(f"Error fetching page {page_url}: {e}", file=sys.stderr)
+        print(f"Error fetching page {start_url}: {e}", file=sys.stderr)
 
     return unique_urls
 
-def main(url):
+def main():
     """Main function to handle URL input and print unique URLs."""
-    if not url:
-        print("No URL provided.", file=sys.stderr)
+    if len(sys.argv) < 2:
+        print("Usage: python script.py <start_url>", file=sys.stderr)
         sys.exit(1)
 
-    unique_urls = get_unique_urls(url)
+    start_url = sys.argv[1]
+    unique_urls = get_unique_urls(start_url)
     for url in unique_urls:
         print(url)
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python script.py <URL>", file=sys.stderr)
-        sys.exit(1)
-
-    main(sys.argv[1])
+    main()
 EOF
 ```
 
