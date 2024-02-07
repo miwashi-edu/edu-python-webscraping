@@ -195,87 +195,51 @@ cd web_scraping
 echo '#!'"$(which python3)" >  scrape_page
 chmod +x scrape_page
 cat >> scrape_page << 'EOF'
-import argparse
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
 import sys
 
-def is_valid_url(base_url, url):
-    """Check if a URL belongs to the same website as the base URL."""
-    return urlparse(url).netloc == urlparse(base_url).netloc
-
-def make_absolute_url(base_url, relative_url):
-    """Convert a relative URL to an absolute URL."""
-    return urljoin(base_url, relative_url)
-
-def scrape_site(start_url, output=None):
-    """Scrape the site for URLs and image sources."""
-    base_url = f"{urlparse(start_url).scheme}://{urlparse(start_url).netloc}"
-    visited_urls = set()  # Track visited URLs to avoid duplicates.
-    urls_to_visit = [start_url]  # Queue of URLs to visit.
-
-    # Open the file once if output is specified.
-    file = open(output, 'a') if output else None
-
+def get_unique_urls(page_url):
+    """Scrape the page for unique img and a tag URLs."""
+    unique_urls = set()  # Use a set to store unique URLs
     try:
-        while urls_to_visit:
-            current_url = urls_to_visit.pop(0)
-            if current_url in visited_urls:
-                continue  # Skip already visited URLs.
+        response = requests.get(page_url)
+        soup = BeautifulSoup(response.content, 'html.parser')
 
-            visited_urls.add(current_url)
-            try:
-                response = requests.get(current_url)
-                if response.headers.get('Content-Type', '').startswith('text/html'):
-                    soup = BeautifulSoup(response.text, 'html.parser')
+        # Extract URLs from <a> tags
+        for link in soup.find_all('a', href=True):
+            href = link['href']
+            full_url = urljoin(page_url, href)
+            unique_urls.add(full_url)
 
-                    # Extract and process image sources.
-                    for img_tag in soup.find_all('img'):
-                        img_src = img_tag.get('src', '')
-                        if img_src:
-                            absolute_img_url = make_absolute_url(current_url, img_src)
-                            # Print or write image URLs depending on output option.
-                            if file:
-                                file.write(f"{absolute_img_url}\n")
-                            else:
-                                print(absolute_img_url)
+        # Extract URLs from <img> tags
+        for img in soup.find_all('img', src=True):
+            src = img['src']
+            full_url = urljoin(page_url, src)
+            unique_urls.add(full_url)
 
-                    # Extract and queue anchor tags for further visiting.
-                    for link in soup.find_all('a', href=True):
-                        href = link['href']
-                        absolute_url = make_absolute_url(current_url, href)
-                        if is_valid_url(base_url, absolute_url) and absolute_url not in visited_urls and absolute_url not in urls_to_visit:
-                            urls_to_visit.append(absolute_url)  # Add new URLs only if not already queued or visited.
+    except requests.RequestException as e:
+        print(f"Error fetching page {page_url}: {e}", file=sys.stderr)
 
-                # Suppress progress updates when not writing to a file.
-                if output:
-                    sys.stdout.write(f"\rProcessed URLs: {len(visited_urls)}" + " " * 20)
-                    sys.stdout.flush()
+    return unique_urls
 
-            except requests.RequestException as e:
-                sys.stderr.write(f"\nRequest failed: {e}\n")
-                sys.stderr.flush()
+def main(url):
+    """Main function to handle URL input and print unique URLs."""
+    if not url:
+        print("No URL provided.", file=sys.stderr)
+        sys.exit(1)
 
-    finally:
-        if file:
-            file.close()
-            if output:
-                # Print the total processed URLs count if output file is specified.
-                print(f"\rTotal Processed URLs: {len(visited_urls)}".ljust(50))
-
-def main():
-    """Parse arguments and control script flow."""
-    parser = argparse.ArgumentParser(description="Scrape a website for URLs and image sources with clean output suitable for piping.")
-    parser.add_argument("start_url", help="The starting URL to begin scraping from.")
-    parser.add_argument("-o", "--output", help="Optional: Output file to continuously write URLs and image sources.", default=None)
-
-    args = parser.parse_args()
-
-    scrape_site(args.start_url, args.output)
+    unique_urls = get_unique_urls(url)
+    for url in unique_urls:
+        print(url)
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) < 2:
+        print("Usage: python script.py <URL>", file=sys.stderr)
+        sys.exit(1)
+
+    main(sys.argv[1])
 EOF
 ```
 
