@@ -51,63 +51,62 @@ def is_valid_url(base_url, url):
     """Check if a URL belongs to the same website as the base URL."""
     return urlparse(url).netloc == urlparse(base_url).netloc
 
-def scrape_site(start_url):
+def scrape_site(start_url, output=None):
     """Scrape the site for local URLs."""
     base_url = f"{urlparse(start_url).scheme}://{urlparse(start_url).netloc}"
     visited_urls = set()
     urls_to_visit = [start_url]
-    local_urls = set()
 
-    while urls_to_visit:
-        current_url = urls_to_visit.pop(0)
-        if current_url in visited_urls:
-            continue
+    # Only open the file once if output is specified.
+    file = open(output, 'a') if output else None
 
-        visited_urls.add(current_url)
-        try:
-            response = requests.get(current_url)
-            if response.headers.get('Content-Type', '').startswith('text/html'):
-                soup = BeautifulSoup(response.text, 'html.parser')
-                for link in soup.find_all('a', href=True):
-                    href = link['href']
-                    absolute_url = urljoin(current_url, href)
-                    if is_valid_url(base_url, absolute_url) and absolute_url not in visited_urls:
-                        local_urls.add(absolute_url)
-                        urls_to_visit.append(absolute_url)
+    try:
+        while urls_to_visit:
+            current_url = urls_to_visit.pop(0)
+            if current_url in visited_urls:
+                continue
 
-            # Output the number of URLs found, updating the same line.
-            sys.stdout.write(f"\rFound URLs: {len(local_urls)}" + " " * 20)
-            sys.stdout.flush()
+            visited_urls.add(current_url)
+            try:
+                response = requests.get(current_url)
+                if response.headers.get('Content-Type', '').startswith('text/html'):
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    for link in soup.find_all('a', href=True):
+                        href = link['href']
+                        absolute_url = urljoin(current_url, href)
+                        if is_valid_url(base_url, absolute_url) and absolute_url not in visited_urls:
+                            if file:
+                                file.write(f"{absolute_url}\n")
+                            else:
+                                print(absolute_url)
+                            urls_to_visit.append(absolute_url)
 
-        except requests.RequestException as e:
-            print(f"\nRequest failed: {e}", file=sys.stderr)
+                if output:
+                    # Dynamically update the count of found URLs on the same line if output file is specified
+                    sys.stdout.write(f"\rFound URLs: {len(visited_urls)}" + " " * 20)
+                    sys.stdout.flush()
 
-    # Ensure the final count is printed on a new line after the loop completes.
-    print(f"\rTotal Found URLs: {len(local_urls)}".ljust(50))
-    return local_urls
+            except requests.RequestException as e:
+                sys.stderr.write(f"\nRequest failed: {e}\n")
+                sys.stderr.flush()
 
-def write_urls_to_file(urls, file_path):
-    """Write found URLs to a specified file."""
-    with open(file_path, 'w') as file:
-        for url in urls:
-            file.write(f"{url}\n")
-    print(f"\nURLs have been written to {file_path}")
+    finally:
+        if file:
+            file.close()
+            print(f"\nURLs have been written to {output}")
+        elif output:
+            # Final count is printed on a new line after the loop completes if output file is specified.
+            print(f"\rTotal Found URLs: {len(visited_urls)}".ljust(50))
 
 def main():
     """Main function to parse arguments and control the script flow."""
     parser = argparse.ArgumentParser(description="Scrape a website for local URLs.")
     parser.add_argument("start_url", help="The starting URL to begin scraping from.")
-    parser.add_argument("-o", "--output", help="Optional: Output file to write the URLs to.", default=None)
+    parser.add_argument("-o", "--output", help="Optional: Output file to write the URLs to continuously.", default=None)
 
     args = parser.parse_args()
 
-    found_urls = scrape_site(args.start_url)
-    
-    if args.output:
-        write_urls_to_file(found_urls, args.output)
-    else:
-        # Print a newline after the final count to ensure it's easy to see.
-        print("\nFinished scanning.")
+    scrape_site(args.start_url, args.output)
 
 if __name__ == "__main__":
     main()
@@ -186,4 +185,149 @@ for line in sys.stdin:
         print(url)
 EOF
 ```
+
+# scrape_page
+
+```
+cd ~
+cd ws
+cd web_scraping
+echo '#!'"$(which python3)" >  scrape_page
+chmod +x scrape_page
+cat >> scrape_page << 'EOF'
+import argparse
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse, urljoin
+import sys
+
+def is_valid_url(base_url, url):
+    """Check if a URL belongs to the same website as the base URL."""
+    return urlparse(url).netloc == urlparse(base_url).netloc
+
+def make_absolute_url(base_url, relative_url):
+    """Convert a relative URL to an absolute URL."""
+    return urljoin(base_url, relative_url)
+
+def scrape_site(start_url, output=None):
+    """Scrape the site for URLs and image sources."""
+    base_url = f"{urlparse(start_url).scheme}://{urlparse(start_url).netloc}"
+    visited_urls = set()  # Track visited URLs to avoid duplicates.
+    urls_to_visit = [start_url]  # Queue of URLs to visit.
+
+    # Open the file once if output is specified.
+    file = open(output, 'a') if output else None
+
+    try:
+        while urls_to_visit:
+            current_url = urls_to_visit.pop(0)
+            if current_url in visited_urls:
+                continue  # Skip already visited URLs.
+
+            visited_urls.add(current_url)
+            try:
+                response = requests.get(current_url)
+                if response.headers.get('Content-Type', '').startswith('text/html'):
+                    soup = BeautifulSoup(response.text, 'html.parser')
+
+                    # Extract and process image sources.
+                    for img_tag in soup.find_all('img'):
+                        img_src = img_tag.get('src', '')
+                        if img_src:
+                            absolute_img_url = make_absolute_url(current_url, img_src)
+                            # Print or write image URLs depending on output option.
+                            if file:
+                                file.write(f"{absolute_img_url}\n")
+                            else:
+                                print(absolute_img_url)
+
+                    # Extract and queue anchor tags for further visiting.
+                    for link in soup.find_all('a', href=True):
+                        href = link['href']
+                        absolute_url = make_absolute_url(current_url, href)
+                        if is_valid_url(base_url, absolute_url) and absolute_url not in visited_urls and absolute_url not in urls_to_visit:
+                            urls_to_visit.append(absolute_url)  # Add new URLs only if not already queued or visited.
+
+                # Suppress progress updates when not writing to a file.
+                if output:
+                    sys.stdout.write(f"\rProcessed URLs: {len(visited_urls)}" + " " * 20)
+                    sys.stdout.flush()
+
+            except requests.RequestException as e:
+                sys.stderr.write(f"\nRequest failed: {e}\n")
+                sys.stderr.flush()
+
+    finally:
+        if file:
+            file.close()
+            if output:
+                # Print the total processed URLs count if output file is specified.
+                print(f"\rTotal Processed URLs: {len(visited_urls)}".ljust(50))
+
+def main():
+    """Parse arguments and control script flow."""
+    parser = argparse.ArgumentParser(description="Scrape a website for URLs and image sources with clean output suitable for piping.")
+    parser.add_argument("start_url", help="The starting URL to begin scraping from.")
+    parser.add_argument("-o", "--output", help="Optional: Output file to continuously write URLs and image sources.", default=None)
+
+    args = parser.parse_args()
+
+    scrape_site(args.start_url, args.output)
+
+if __name__ == "__main__":
+    main()
+EOF
+```
+
+```bash
+cd ~
+cd ws
+cd web_scraping
+echo '#!'"$(which python3)" >  download
+chmod +x download
+cat >> download << 'EOF'
+import os
+import sys
+import requests
+from urllib.parse import urlparse, unquote
+
+def ensure_dir(directory):
+    """Ensure that a directory exists; if not, create it."""
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+def download_file(url):
+    """Download a file from a URL, preserving its path structure."""
+    try:
+        response = requests.get(url, stream=True)
+        # Check if the request was successful (200 OK)
+        if response.status_code == 200:
+            parsed_url = urlparse(url)
+            # Unquote URL to handle %20 spaces etc., and construct the local file path
+            path = unquote(parsed_url.path)
+            # Assuming all files are downloaded to a 'downloads' directory
+            local_file_path = os.path.join('downloads', path.lstrip('/'))
+            
+            ensure_dir(os.path.dirname(local_file_path))
+            
+            with open(local_file_path, 'wb') as file:
+                for chunk in response.iter_content(chunk_size=8192):
+                    file.write(chunk)
+            print(f"Downloaded: {url} -> {local_file_path}")
+        else:
+            print(f"Failed to download {url}: HTTP Status Code {response.status_code}", file=sys.stderr)
+    except requests.RequestException as e:
+        print(f"Error downloading {url}: {e}", file=sys.stderr)
+
+def main():
+    print("Enter URLs (one per line). Press Ctrl-D (Unix) or Ctrl-Z (Windows) followed by Enter when done:")
+    for line in sys.stdin:
+        url = line.strip()
+        download_file(url)
+
+if __name__ == "__main__":
+    main()
+```
+
+
 
